@@ -49,13 +49,14 @@ def get_klines(symbol):
 def analyze_market():
     symbols = get_phemex_symbols()
     signals = []
+    debug_info = []
 
     for sym in symbols:
         df = get_klines(sym)
         if df is None or len(df) < 30:
             continue
         
-        # İndikatorlar
+        # İndikatorların hesablanması
         df['EMA7'] = ta.trend.ema_indicator(df['close'], window=7)
         df['EMA25'] = ta.trend.ema_indicator(df['close'], window=25)
         df['RSI'] = ta.momentum.rsi(df['close'], window=14)
@@ -67,20 +68,24 @@ def analyze_market():
         curr_rsi = df['RSI'].iloc[-1]
         price = df['close'].iloc[-1]
         
-        # ƏRKƏN TREND SÜZGƏCİ
+        # Əgər BTC və ya ETH-dirsə, diaqnostika üçün qeyd edək
+        if sym in ["BTCUSDT", "ETHUSDT"]:
+            debug_info.append(f"📊 `{sym}` -> Qiymət: ${price:.2f} | EMA7: {curr_ema7:.2f} | EMA25: {curr_ema25:.2f} | RSI: {curr_rsi:.1f}")
+
+        # ƏRKƏN TREND SÜZGƏCİ (Kəsişmə yoxlaması)
         if prev_ema7 <= prev_ema25 and curr_ema7 > curr_ema25 and curr_rsi > 45:
             signals.append(f"🟢 **{sym}** — **LONG (Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: EMA 7/25 kəsişməsi yenicə baş verdi!")
 
         elif prev_ema7 >= prev_ema25 and curr_ema7 < curr_ema25 and curr_rsi < 55:
             signals.append(f"🔴 **{sym}** — **SHORT (Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: EMA 7/25 kəsişməsi yenicə baş verdi!")
 
-    # Əgər siqnal tapılıbsa, onları göndər
+    # Siqnal varsa onları göndər, yoxdursa cari analiz məlumatlarını hesabat kimi at
     if signals:
         msg = "⚡ **PHEMEX - ERKƏN TREND SİQNALI (5M)**\n\n" + "\n\n".join(signals)
         send_telegram(msg)
     else:
-        # Botun işlədiyini görmək üçün hər yoxlamada test mesajı atırıq
-        send_telegram("🔄 *Phemex Bot:* Skan olundu. Hal-hazırda yeni kəsişmə (trend başlanğıcı) yoxdur, bazar izlənilir.")
+        report = "🔄 *Phemex Bot Skan Hesabatı*:\nYeni kəsişmə yoxdur. Phemex-dən alınan son test göstəriciləri:\n\n" + "\n".join(debug_info)
+        send_telegram(report)
 
 if __name__ == "__main__":
     analyze_market()
