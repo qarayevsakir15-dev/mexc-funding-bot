@@ -1,26 +1,30 @@
-name: Run Funding Bot
+name: Phemex Trend Bot
 
 on:
   schedule:
-    - cron: '0 */8 * * *'  # Hər 8 saatda bir avtomatik işləyir
-  workflow_dispatch: # İstədiyin vaxt əllə işə salmaq üçün
+    - cron: '*/5 * * * *'  # Hər 5 dəqiqədən bir avtomatik işləyir
+  workflow_dispatch:        # Əllə işə salmaq üçün
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Code Check
+        uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Python Setup
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
-          pip install requests
+          pip install requests pandas pandas-ta
 
-      - name: Run script
-        run: |
-          python bot.py
+      - name: Run Bot
+        env:
+          PHEMEX_API_KEY: ${{ secrets.PHEMEX_API_KEY }}
+          PHEMEX_SECRET_KEY: ${{ secrets.PHEMEX_SECRET_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bot.py
