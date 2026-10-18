@@ -38,7 +38,7 @@ def check_funding_rates():
             symbol = item.get('symbol', '').replace('_', '/')
             rate = item.get('fundingRate', 0) * 100
             
-            if rate >= 0.03:
+            if rate >= 0.01:
                 report += f"🔹 *{symbol}*: `{rate:.4f}%` (Hər 8 saatdan bir)\n"
                 top_coins += 1
                 if top_coins >= 5:
