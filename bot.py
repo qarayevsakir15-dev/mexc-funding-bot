@@ -1,58 +1,77 @@
+import os
 import requests
+import pandas as pd
+import pandas_ta as ta
 
-# ================= MƏXFİ MƏLUMATLAR =================
-TELEGRAM_TOKEN = "8967707588:AAHfwjPTAijCAx6-kTEHw1v_OS6ZUXIthlU"
-TELEGRAM_CHAT_ID = "8489506661"
-# ======================================================
+# Telegram və Phemex parametrləri
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-def send_telegram(msg):
-    """Telegram bota mesaj göndərən və cavabı yoxlayan funksiya"""
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+def send_telegram(message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
-        response = requests.post(url, json={
-            "chat_id": TELEGRAM_CHAT_ID, 
-            "text": msg, 
-            "parse_mode": "Markdown"
-        })
-        print("Telegram-dan gələn cavab:", response.text)
+        requests.post(url, json=payload)
     except Exception as e:
-        print("Telegram xətası:", e)
+        print(f"Telegram xətası: {e}")
 
-def check_funding_rates():
-    """MEXC fyuçers bazarından ən yüksək faiz verən coin-ləri axtarır"""
-    try:
-        response = requests.get("https://contract.mexc.com/api/v1/contract/detail")
-        data = response.json()
+def get_phemex_symbols():
+    """Phemex-də aktiv USDT fyuçers cütlüklərini çəkir"""
+    url = "https://api.phemex.com/public/products"
+    res = requests.get(url).json()
+    symbols = []
+    if res.get("code") == 0:
+        products = res.get("data", {}).get("products", [])
+        for p in products:
+            if p.get("type") == "Perpetual" and p.get("quoteCurrency") == "USDT":
+                symbols.append(p.get("symbol"))
+    return symbols[:30]  # Ən aktiv ilk 30 cütlük
+
+def get_klines(symbol):
+    """Phemex-dən 5 dəqiqəlik klines (şam) məlumatını çəkir"""
+    url = f"https://api.phemex.com/exchange/public/md/kline?symbol={symbol}&interval=300&limit=50"
+    res = requests.get(url).json()
+    if res.get("code") == 0 and "rows" in res.get("data", {}):
+        rows = res["data"]["rows"]
+        df = pd.DataFrame(rows, columns=['time', 'interval', 'close', 'open', 'high', 'low', 'volume', 'turnover'])
+        df['close'] = df['close'] / 10000.0 if df['close'].iloc[0] > 1000000 else df['close']
+        df['volume'] = df['volume'] / 10000.0 if df['volume'].iloc[0] > 1000000 else df['volume']
+        return df
+    return None
+
+def analyze_market():
+    symbols = get_phemex_symbols()
+    signals = []
+
+    for sym in symbols:
+        df = get_klines(sym)
+        if df is None or len(df) < 30:
+            continue
         
-        if not data.get("success"):
-            send_telegram("⚠️ MEXC API-dən məlumat almaq mümkün olmadı.")
-            return
-            
-        contracts = data.get("data", [])
-        sorted_contracts = sorted(contracts, key=lambda x: x.get('fundingRate', 0), reverse=True)
+        # İndikatorların hesablanması
+        df['EMA7'] = ta.ema(df['close'], length=7)
+        df['EMA25'] = ta.ema(df['close'], length=25)
+        df['RSI'] = ta.rsi(df['close'], length=14)
         
-        report = "📊 *MEXC Yüksək Funding Rate Hesabatı*\n\n"
-        top_coins = 0
+        prev_ema7 = df['EMA7'].iloc[-2]
+        prev_ema25 = df['EMA25'].iloc[-2]
+        curr_ema7 = df['EMA7'].iloc[-1]
+        curr_ema25 = df['EMA25'].iloc[-1]
+        curr_rsi = df['RSI'].iloc[-1]
+        price = df['close'].iloc[-1]
         
-        for item in sorted_contracts:
-            symbol = item.get('symbol', '').replace('_', '/')
-            rate = item.get('fundingRate', 0) * 100
-            
-            if rate >= 0.01:
-                report += f"🔹 *{symbol}*: `{rate:.4f}%` (Hər 8 saatdan bir)\n"
-                top_coins += 1
-                if top_coins >= 5:
-                    break
-        
-        if top_coins == 0:
-            report += "Hal-hazırda kritik dərəcədə yüksək faizli (>0.03%) coin yoxdur."
-            
-        send_telegram(report)
-        
-    except Exception as e:
-        print("Xəta baş verdi:", e)
-        send_telegram(f"⚠️ Bot xətası: {e}")
+        # TRENDİN ƏVVƏLİ SÜZGƏCİ (Kəsişmə məhz son şamda baş verib)
+        if prev_ema7 <= prev_ema25 and curr_ema7 > curr_ema25 and curr_rsi > 45:
+            signals.append(f"🟢 **{sym}** — **LONG (Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: EMA 7/25 kəsişməsi yenicə baş verdi!")
+
+        elif prev_ema7 >= prev_ema25 and curr_ema7 < curr_ema25 and curr_rsi < 55:
+            signals.append(f"🔴 **{sym}** — **SHORT (Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: EMA 7/25 kəsişməsi yenicə baş verdi!")
+
+    if signals:
+        msg = "⚡ **PHEMEX - ERKƏN TREND SİQNALI (5M)**\n\n" + "\n\n".join(signals)
+        send_telegram(msg)
+    else:
+        print("Heç bir yeni trend başlanğıcı tapılmadı.")
 
 if __name__ == "__main__":
-    send_telegram("🚀 Funding Rate Botu işə düşdü!")
-    check_funding_rates()
+    analyze_market()
