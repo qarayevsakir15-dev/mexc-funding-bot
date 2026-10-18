@@ -55,7 +55,7 @@ def analyze_market():
         if df is None or len(df) < 30:
             continue
         
-        # İndikatorlar (ta kitabxanası ilə)
+        # İndikatorlar
         df['EMA7'] = ta.trend.ema_indicator(df['close'], window=7)
         df['EMA25'] = ta.trend.ema_indicator(df['close'], window=25)
         df['RSI'] = ta.momentum.rsi(df['close'], window=14)
@@ -74,11 +74,13 @@ def analyze_market():
         elif prev_ema7 >= prev_ema25 and curr_ema7 < curr_ema25 and curr_rsi < 55:
             signals.append(f"🔴 **{sym}** — **SHORT (Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: EMA 7/25 kəsişməsi yenicə baş verdi!")
 
+    # Əgər siqnal tapılıbsa, onları göndər
     if signals:
         msg = "⚡ **PHEMEX - ERKƏN TREND SİQNALI (5M)**\n\n" + "\n\n".join(signals)
         send_telegram(msg)
     else:
-        print("Heç bir yeni trend başlanğıcı tapılmadı.")
+        # Botun işlədiyini görmək üçün hər yoxlamada test mesajı atırıq
+        send_telegram("🔄 *Phemex Bot:* Skan olundu. Hal-hazırda yeni kəsişmə (trend başlanğıcı) yoxdur, bazar izlənilir.")
 
 if __name__ == "__main__":
     analyze_market()
