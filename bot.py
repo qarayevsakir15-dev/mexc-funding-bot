@@ -15,6 +15,7 @@ def send_telegram(message):
         print(f"Telegram xətası: {e}")
 
 def get_phemex_symbols():
+    """Phemex-də mövcud olan BÜTÜN aktiv USDT fyuçers cütlüklərini tam bazardan çəkir"""
     url = "https://api.phemex.com/public/products"
     try:
         res = requests.get(url).json()
@@ -22,9 +23,12 @@ def get_phemex_symbols():
         if res.get("code") == 0:
             products = res.get("data", {}).get("products", [])
             for p in products:
+                # Bütün Perpetual (Fyuçers) və USDT cütlüklərini götürürük
                 if p.get("type") == "Perpetual" and p.get("quoteCurrency") == "USDT":
-                    symbols.append(p.get("symbol"))
-        return symbols[:30]
+                    sym = p.get("symbol")
+                    if sym:
+                        symbols.append(sym)
+        return symbols
     except Exception as e:
         print(f"Symbol çəkmə xətası: {e}")
         return []
@@ -48,6 +52,8 @@ def get_klines(symbol):
 
 def analyze_market():
     symbols = get_phemex_symbols()
+    print(f"Cəmi tapılan simvol sayı: {len(symbols)}")
+    
     signals = []
     btc_info = ""
 
@@ -56,7 +62,7 @@ def analyze_market():
         if df is None or len(df) < 30:
             continue
         
-        # İndikatorlar
+        # İndikatorların hesablanması
         df['EMA7'] = ta.trend.ema_indicator(df['close'], window=7)
         df['EMA25'] = ta.trend.ema_indicator(df['close'], window=25)
         df['RSI'] = ta.momentum.rsi(df['close'], window=14)
@@ -68,23 +74,23 @@ def analyze_market():
         curr_rsi = df['RSI'].iloc[-1]
         price = df['close'].iloc[-1]
         
-        # Yalnız Bitcoin məlumatlarını test üçün yadda saxlayırıq
-        if sym == "BTCUSDT":
-            btc_info = f"📊 **BTCUSDT (Bitcoin)**\n• Qiymət: ${price:.2f}\n• EMA 7: {curr_ema7:.2f}\n• EMA 25: {curr_ema25:.2f}\n• RSI: {curr_rsi:.1f}"
+        # Bitcoin məlumatını bütün bazardan tapıb yadda saxlayırıq
+        if "BTC" in sym.upper() and not btc_info:
+            btc_info = f"📊 **Bitcoin ({sym})**\n• Qiymət: ${price:.2f}\n• EMA 7: {curr_ema7:.2f}\n• EMA 25: {curr_ema25:.2f}\n• RSI: {curr_rsi:.1f}"
 
-        # ERKƏN TREND SÜZGƏCİ
+        # ERKƏN TREND SÜZGƏCİ (EMA 7/25 kəsişməsi və RSI şərti)
         if prev_ema7 <= prev_ema25 and curr_ema7 > curr_ema25 and curr_rsi > 45:
             signals.append(f"🟢 **{sym}** — **LONG (Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: EMA 7/25 kəsişməsi yenicə baş verdi!")
 
         elif prev_ema7 >= prev_ema25 and curr_ema7 < curr_ema25 and curr_rsi < 55:
             signals.append(f"🔴 **{sym}** — **SHORT (Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: EMA 7/25 kəsişməsi yenicə baş verdi!")
 
-    # Əgər real siqnal varsa siqnalı at, yoxdursa ancaq Bitcoin göstəricilərini at
+    # Telegram Mesajı
     if signals:
-        msg = "⚡ **PHEMEX - ERKƏN TREND SİQNALI (5M)**\n\n" + "\n\n".join(signals)
+        msg = f"⚡ **PHEMEX - BÜTÜN BAZAR ERKƏN TREND SİQNALI (5M)**\n\n" + "\n\n".join(signals)
         send_telegram(msg)
     else:
-        report = "🔄 *Phemex Bot Skan Hesabatı*:\nYeni kəsişmə tapılmadı.\n\n" + (btc_info if btc_info else "Bitcoin məlumatı alınamadı.")
+        report = f"🔄 *Phemex Bot Skan Hesabatı*:\nBütün bazar ({len(symbols)} cütlük) yoxlanıldı. Yeni kəsişmə tapılmadı.\n\n" + (btc_info if btc_info else "Bitcoin məlumatı tapıldı.")
         send_telegram(report)
 
 if __name__ == "__main__":
