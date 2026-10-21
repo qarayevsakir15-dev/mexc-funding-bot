@@ -15,10 +15,11 @@ def send_telegram(message):
         print(f"Telegram xətası: {e}")
 
 def get_klines(symbol):
-    """Binance Futures API - GitHub-ı bloklamır, 4 saatlıq (4h) qrafikləri dəqiq qaytarır"""
+    """Binance Futures API - 4 saatlıq (4h) qrafikləri çəkir və xəta kodunu qeyd edir"""
     url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval=4h&limit=50"
     try:
         res = requests.get(url, timeout=5)
+        print(f"{symbol} Status: {res.status_code}") # GitHub loglarında görünəcək
         if res.status_code == 200:
             rows = res.json()
             if not rows or not isinstance(rows, list):
@@ -31,22 +32,35 @@ def get_klines(symbol):
             df['close'] = df['close'].astype(float)
             df['volume'] = df['volume'].astype(float)
             return df
+        else:
+            print(f"Xəta cavabı ({symbol}): {res.text}")
     except Exception as e:
         print(f"Kline çəkmə xətası ({symbol}): {e}")
     return None
 
 def analyze_market():
-    # Sənin istədiyin seçilmiş coinlər
+    # Binance Futures-də 100% mövcud olan əsas simvollar
     target_coins = [
         "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "SUIUSDT", 
         "LINKUSDT", "DOGEUSDT", "NEARUSDT", "ADAUSDT", "ARBUSDT", 
-        "UNIUSDT", "LTCUSDT", "ONDOUSDT", "XLMUSDT", "PUMPUSDT", "AVAXUSDT"
+        "UNIUSDT", "LTCUSDT", "ONDOUSDT", "XLMUSDT", "AVAXUSDT"
     ]
     
     signals = []
     summary_details = []
+    error_logs = []
 
     for sym in target_coins:
+        url_test = f"https://fapi.binance.com/fapi/v1/klines?symbol={sym}&interval=4h&limit=50"
+        try:
+            r = requests.get(url_test, timeout=5)
+            if r.status_code != 200:
+                error_logs.append(f"{sym}: HTTP {r.status_code}")
+                continue
+        except Exception as ex:
+            error_logs.append(f"{sym}: {str(ex)}")
+            continue
+
         df = get_klines(sym)
         if df is None or len(df) < 30:
             continue
@@ -78,7 +92,7 @@ def analyze_market():
         msg = f"⚡ **KRİPTO - 4H SİQNALI (5M Yoxlama)**\n\n" + "\n\n".join(signals)
         send_telegram(msg)
     else:
-        details_text = "\n".join(summary_details) if summary_details else "⚠️ Məlumat alınmadı."
+        details_text = "\n".join(summary_details) if summary_details else f"⚠️ Məlumat alınmadı.\nXətalar: {', '.join(error_logs[:5])}"
         report = (
             f"🔄 *4H Qrafik Skan Hesabatı*:\n"
             f"Siyahıdakı coinlər 4 saatlıq intervalda yoxlanıldı. Yeni kəsişmə tapılmadı.\n\n"
