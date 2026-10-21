@@ -14,31 +14,29 @@ def send_telegram(message):
     except Exception as e:
         print(f"Telegram xətası: {e}")
 
-def get_phemex_klines(symbol):
-    """Phemex Public API vasitəsilə 4 saatlıq (4h) kline məlumatlarını çəkir"""
-    # Phemex-də 4 saatlıq interval saniyə ilə: 4 * 3600 = 14400
-    url = f"https://api.phemex.com/exchange/public/md/kline?symbol={symbol}&interval=14400&limit=50"
+def get_klines(symbol):
+    """Binance Futures API - GitHub-ı bloklamır, 4 saatlıq (4h) qrafikləri dəqiq qaytarır"""
+    url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval=4h&limit=50"
     try:
-        res = requests.get(url, timeout=5).json()
-        if res.get("code") == 0 and "rows" in res.get("data", {}):
-            rows = res["data"]["rows"]
-            if not rows:
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200:
+            rows = res.json()
+            if not rows or not isinstance(rows, list):
                 return None
-            df = pd.DataFrame(rows, columns=['time', 'interval', 'close', 'open', 'high', 'low', 'volume', 'turnover'])
+            df = pd.DataFrame(rows, columns=[
+                'open_time', 'open', 'high', 'low', 'close', 'volume',
+                'close_time', 'quote_asset_volume', 'number_of_trades',
+                'taker_buy_base', 'taker_buy_quote', 'ignore'
+            ])
             df['close'] = df['close'].astype(float)
             df['volume'] = df['volume'].astype(float)
-            
-            # Phemex qiymətlərində bəzən 10000 çarpanı olur, onu tənzimləyirik
-            if df['close'].iloc[0] > 1000000:
-                df['close'] = df['close'] / 10000.0
-                df['volume'] = df['volume'] / 10000.0
             return df
     except Exception as e:
-        print(f"Phemex Kline xətası ({symbol}): {e}")
+        print(f"Kline çəkmə xətası ({symbol}): {e}")
     return None
 
 def analyze_market():
-    # Sənin istədiyin coinlərin Phemex-dəki standart fyuçers simvol adları
+    # Sənin istədiyin seçilmiş coinlər
     target_coins = [
         "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "SUIUSDT", 
         "LINKUSDT", "DOGEUSDT", "NEARUSDT", "ADAUSDT", "ARBUSDT", 
@@ -49,19 +47,11 @@ def analyze_market():
     summary_details = []
 
     for sym in target_coins:
-        df = get_phemex_klines(sym)
-        
-        # Əgər standart adla tapılmasa, Phemex-dəki 'u' prefixli alternativi yoxlayaq (məs: uBTCUSDT)
-        if df is None or len(df) < 30:
-            df = get_phemex_klines(f"u{sym}")
-            used_sym = f"u{sym}"
-        else:
-            used_sym = sym
-
+        df = get_klines(sym)
         if df is None or len(df) < 30:
             continue
         
-        # 4H qrafik üzrə indikatorlar (EMA 7, EMA 25, RSI 14)
+        # 4 Saatlıq (4H) qrafik üzrə indikatorlar (EMA 7, EMA 25, RSI 14)
         df['EMA7'] = ta.trend.ema_indicator(df['close'], window=7)
         df['EMA25'] = ta.trend.ema_indicator(df['close'], window=25)
         df['RSI'] = ta.momentum.rsi(df['close'], window=14)
@@ -76,23 +66,23 @@ def analyze_market():
         # Faktiki göstəriciləri yığırıq
         summary_details.append(f"• `{sym}` | Qiymət: `${price:.4f}` | EMA7: `{curr_ema7:.4f}` | EMA25: `{curr_ema25:.4f}` | RSI: `{curr_rsi:.1f}`")
 
-        # 4H Tранд kəsişmə yoxlaması
+        # 4H Trend kəsişmə yoxlaması
         if prev_ema7 <= prev_ema25 and curr_ema7 > curr_ema25 and curr_rsi > 45:
             signals.append(f"🟢 **{sym}** — **LONG (4H Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: 4H EMA 7/25 kəsişməsi baş verdi!")
 
         elif prev_ema7 >= prev_ema25 and curr_ema7 < curr_ema25 and curr_rsi < 55:
             signals.append(f"🔴 **{sym}** — **SHORT (4H Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: 4H EMA 7/25 kəsişməsi baş verdi!")
 
-    # Telegram Hesabatı
+    # Telegram Mesajı
     if signals:
-        msg = f"⚡ **PHEMEX - 4H SİQNALI (5M Yoxlama)**\n\n" + "\n\n".join(signals)
+        msg = f"⚡ **KRİPTO - 4H SİQNALI (5M Yoxlama)**\n\n" + "\n\n".join(signals)
         send_telegram(msg)
     else:
         details_text = "\n".join(summary_details) if summary_details else "⚠️ Məlumat alınmadı."
         report = (
-            f"🔄 *Phemex 4H Qrafik Skan Hesabatı*:\n"
-            f"Siyahıdakı coinlər 4H intervalda yoxlanıldı. Yeni kəsişmə tapılmadı.\n\n"
-            f"**Phemex 4H Faktiki Göstəricilər:**\n{details_text}"
+            f"🔄 *4H Qrafik Skan Hesabatı*:\n"
+            f"Siyahıdakı coinlər 4 saatlıq intervalda yoxlanıldı. Yeni kəsişmə tapılmadı.\n\n"
+            f"**4H Faktiki Göstəricilər:**\n{details_text}"
         )
         send_telegram(report)
 
