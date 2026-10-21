@@ -15,32 +15,32 @@ def send_telegram(message):
         print(f"Telegram xətası: {e}")
 
 def get_klines(symbol):
-    """Bybit v5 Public API - 4 saatlıq (interval=240 dəqiqə) qrafik məlumatlarını çəkir"""
-    url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=240&limit=50"
+    """OKX Public API - GitHub Actions-ı bloklamır, 4 saatlıq (4H) qrafik məlumatlarını verir"""
+    url = f"https://www.okx.com/api/v5/market/candles?instId={symbol}&bar=4H&limit=50"
     try:
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
         if res.status_code == 200:
             data = res.json()
-            if data.get("retCode") == 0:
-                rows = data.get("result", {}).get("list", [])
+            if data.get("code") == "0":
+                rows = data.get("data", [])
                 if not rows:
                     return None
-                # Bybit məlumatı tərsinə (ən yenidən köhnəyə) qaytarır, düzəldirik
-                df = pd.DataFrame(rows, columns=['start_time', 'open', 'high', 'low', 'close', 'volume', 'turnover'])
+                # OKX məlumatı tərsinə (ən yenidən köhnəyə) qaytarır, düzəldirik
+                df = pd.DataFrame(rows, columns=['ts', 'open', 'high', 'low', 'close', 'vol', 'volCcy', 'volCcyQuote', 'confirm'])
                 df = df.iloc[::-1].reset_index(drop=True)
                 df['close'] = df['close'].astype(float)
-                df['volume'] = df['volume'].astype(float)
+                df['vol'] = df['vol'].astype(float)
                 return df
     except Exception as e:
         print(f"Kline çəkmə xətası ({symbol}): {e}")
     return None
 
 def analyze_market():
-    # Sənin istədiyin seçilmiş coinlərin Bybit fyuçers simvolları
+    # OKX fyuçers (SWAP) simvolları
     target_coins = [
-        "BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT", "SUIUSDT", 
-        "LINKUSDT", "DOGEUSDT", "NEARUSDT", "ADAUSDT", "ARBUSDT", 
-        "UNIUSDT", "LTCUSDT", "ONDOUSDT", "XLMUSDT", "AVAXUSDT"
+        "BTC-USDT-SWAP", "ETH-USDT-SWAP", "SOL-USDT-SWAP", "XRP-USDT-SWAP", "SUI-USDT-SWAP", 
+        "LINK-USDT-SWAP", "DOGE-USDT-SWAP", "NEAR-USDT-SWAP", "ADA-USDT-SWAP", "ARB-USDT-SWAP", 
+        "UNI-USDT-SWAP", "LTC-USDT-SWAP", "ONDO-USDT-SWAP", "XLM-USDT-SWAP", "AVAX-USDT-SWAP"
     ]
     
     signals = []
@@ -63,24 +63,25 @@ def analyze_market():
         curr_rsi = df['RSI'].iloc[-1]
         price = df['close'].iloc[-1]
         
-        # Faktiki göstəriciləri yığırıq
-        summary_details.append(f"• `{sym}` | Qiymət: `${price:.4f}` | EMA7: `{curr_ema7:.4f}` | EMA25: `{curr_ema25:.4f}` | RSI: `{curr_rsi:.1f}`")
+        # Ekran üçün təmiz ad (məs: BTC)
+        display_name = sym.replace("-USDT-SWAP", "")
+        summary_details.append(f"• `{display_name}` | Qiymət: `${price:.4f}` | EMA7: `{curr_ema7:.4f}` | EMA25: `{curr_ema25:.4f}` | RSI: `{curr_rsi:.1f}`")
 
         # 4H Trend kəsişmə yoxlaması
         if prev_ema7 <= prev_ema25 and curr_ema7 > curr_ema25 and curr_rsi > 45:
-            signals.append(f"🟢 **{sym}** — **LONG (4H Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: 4H EMA 7/25 kəsişməsi baş verdi!")
+            signals.append(f"🟢 **{display_name}** — **LONG (4H Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: 4H EMA 7/25 kəsişməsi baş verdi!")
 
         elif prev_ema7 >= prev_ema25 and curr_ema7 < curr_ema25 and curr_rsi < 55:
-            signals.append(f"🔴 **{sym}** — **SHORT (4H Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: 4H EMA 7/25 kəsişməsi baş verdi!")
+            signals.append(f"🔴 **{display_name}** — **SHORT (4H Yeni Trend)**\n• Qiymət: ${price:.4f}\n• RSI: {curr_rsi:.1f}\n• Şərt: 4H EMA 7/25 kəsişməsi baş verdi!")
 
     # Telegram Mesajı
     if signals:
-        msg = f"⚡ **BYBİT - 4H SİQNALI (5M Yoxlama)**\n\n" + "\n\n".join(signals)
+        msg = f"⚡ **OKX - 4H SİQNALI (5M Yoxlama)**\n\n" + "\n\n".join(signals)
         send_telegram(msg)
     else:
         details_text = "\n".join(summary_details) if summary_details else "⚠️ Məlumat alınmadı."
         report = (
-            f"🔄 *4H Qrafik Skan Hesabatı (Bybit)*:\n"
+            f"🔄 *4H Qrafik Skan Hesabatı (OKX)*:\n"
             f"Siyahıdakı coinlər 4 saatlıq intervalda yoxlanıldı. Yeni kəsişmə tapılmadı.\n\n"
             f"**4H Faktiki Göstəricilər:**\n{details_text}"
         )
@@ -88,3 +89,4 @@ def analyze_market():
 
 if __name__ == "__main__":
     analyze_market()
+    
